@@ -52,6 +52,7 @@ function blockLine(ctx, b, now, { compact = false } = {}) {
     rest: ['coffee', 'راحة بعد الامتحان', 'متراجعيش الامتحان اللي فات، خلاص خلص'],
     free: ['sparkles', 'وقت حر', 'راحة، أو شغل، أو لفة على الكروت'],
     extra: ['zap', 'تثبيت', 'لفي على الأسئلة المتوقعة والكروت'],
+    warmup: ['play', 'جهزي نفسك', 'ورقة وقلم وكوباية مية، واقفلي الإشعارات'],
   };
   const [ic, label, sub] = map[b.type] || ['circle', b.type, ''];
   const sid = b.sid;
@@ -107,6 +108,7 @@ export function homeView(ctx) {
         rest: ['coffee', 'راحة بعد الامتحان', 'خلاص الامتحان خلص، متراجعيهوش. كلي وريحي.'],
         free: ['sparkles', 'وقت حر', 'لو عايزة تكسبي وقت، ابدأي اللي جاي بدري.'],
         extra: ['zap', 'وقت تثبيت', 'لفي على الأسئلة المتوقعة والكروت.'],
+        warmup: ['play', 'جهزي نفسك', 'ورقة وقلم وكوباية مية، واقفلي الإشعارات. المذاكرة هتبدأ حالا.'],
       };
       const [ic, h, sub] = msgs[ct] || (t && isDone(t.id) ? ['party-popper', 'سابقة الخطة!', 'خلصتي المطلوب دلوقتي، تقدري تبدأي اللي بعده.'] : ['sparkles', 'يلا بينا', '']);
       nowCard = `<div class="now-card card calm">

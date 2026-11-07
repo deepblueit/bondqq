@@ -183,44 +183,73 @@ export function buildPlan({ now = Date.now(), settings, tasks, done }) {
   // minutes of continuous study (any subject) right before slot i, in slots
   const runBefore = i => { let n = 0; for (let k = i - 1; isStudy(k); k--) n++; return n; };
   const runLen = (i, lim, sid, quota) => { let L = 0; while (i + L < lim && ok(i + L, sid, quota)) L++; return L; };
+  // a task may run up to 15 min past the day's budget to finish, instead of leaving a scrap for tomorrow
+  const GRACE = 3;
 
   function place(list, a, b, sid, overflow, quota) {
     let i = idx(a); const lim = idx(b);
     for (const t of list) {
-      let need = Math.round(t.minutes / 5);
+      const total = Math.round(t.minutes / 5);
       if (i >= lim || cap(slots[Math.min(i, N - 1)].t, b, sid, quota) < t.minutes * 0.95) { overflow.push(t.id); continue; }
       const i0 = i;
       const taken = [];
+      let softDay = null;
+      const okT = k => usable(slots[k], sid) && (dayOfSlot[k] === softDay || left(k, sid, quota) >= 5);
+      const runLenT = k => { let n = 0; while (k + n < lim && okT(k + n)) n++; return n; };
       const brk = n => { let k = 0; while (k < n && i < lim && usable(slots[i], sid)) { slots[i].task = '__break'; slots[i].brk = true; taken.push(i); i++; k++; } };
-      // find a start: skip unusable slots and tiny gaps (under 20 min) that would only hold a scrap of the task
-      let L = 0;
-      for (;;) {
-        while (i < lim && !ok(i, sid, quota)) i++;
-        if (i >= lim) break;
-        L = runLen(i, lim, sid, quota);
-        const want = t.kind === 'mock' ? need + (runBefore(i) ? BRK : 0) : Math.min(need, 4);
-        if (L < want || (t.kind === 'mock' && left(i, sid, quota) < t.minutes)) { i += Math.max(1, L); continue; }
-        break;
-      }
-      if (i >= lim) { overflow.push(t.id); i = i0; continue; }
-      let run = runBefore(i);
+
       if (t.kind === 'mock') {
         // one continuous sitting, with a break before it if she was already studying
-        if (run) brk(BRK);
-        for (let k = 0; k < need; k++) { take(i, t.id, sid); taken.push(i); i++; }
+        let found = false;
+        while (i < lim) {
+          while (i < lim && !ok(i, sid, quota)) i++;
+          if (i >= lim) break;
+          const L = runLen(i, lim, sid, quota);
+          if (L < total + (runBefore(i) ? BRK : 0) || left(i, sid, quota) < t.minutes) { i += Math.max(1, L); continue; }
+          found = true; break;
+        }
+        if (!found) { i = i0; overflow.push(t.id); continue; }
+        if (runBefore(i)) brk(BRK);
+        for (let k = 0; k < total; k++) { take(i, t.id, sid); taken.push(i); i++; }
         brk(BRK);
         continue;
       }
-      // take the break at the task boundary when the task would not fit before the next break
-      if (run >= 4 && run + need > RUN + 3) { brk(BRK); run = 0; while (i < lim && !ok(i, sid, quota)) i++; L = runLen(i, lim, sid, quota); }
-      // trim a tiny tail (10 min or less) instead of splitting it off after an interruption
-      if (need > L && need - L <= 2 && run + L <= RUN + 3) need = L;
-      while (need > 0 && i < lim) {
-        if (!ok(i, sid, quota)) { run = 0; i++; continue; }
-        if (run >= RUN && !(need <= 3 && run < RUN + 3)) { brk(BRK); run = 0; continue; }
-        take(i, t.id, sid); taken.push(i); need--; run++; i++;
+
+      // everything else goes in one sitting when possible; otherwise in sittings of 20 min or more
+      // (a last piece of 15 min is fine, a scrap of 10 min or less is trimmed or avoided)
+      let need = total, kept = 0, failed = false;
+      while (need > 0) {
+        let chunk = 0, preBrk = false;
+        for (;;) {
+          while (i < lim && !okT(i)) i++;
+          if (i >= lim) break;
+          const room = Math.floor(left(i, sid, quota) / 5);
+          const soft = dayOfSlot[i] === softDay || need <= room + GRACE;
+          let L = runLenT(i);
+          // under 20 min of the day's budget left and the task cannot finish today: go on tomorrow
+          if (!soft && room < 4) { i += Math.max(1, L); continue; }
+          if (soft) { softDay = dayOfSlot[i]; L = runLenT(i); }
+          const rb = runBefore(i);
+          // the break comes first when she has been studying and the task would not fit before the next break
+          preBrk = rb >= 4 && rb + need > RUN + 3;
+          let avail = L - (preBrk ? BRK : 0);
+          if (!soft) avail = Math.min(avail, room);
+          avail = Math.min(avail, Math.max(4, RUN + 3 - (preBrk ? 0 : rb)));
+          if (avail >= need) { chunk = need; break; }
+          if (avail < Math.min(need, 4)) { i += Math.max(1, L); continue; }
+          const rem = need - avail;
+          if (rem >= 3) { chunk = avail; break; }
+          // only a scrap would be left: trim it when most of the task is kept, or leave 15 min for the next sitting
+          if (kept + avail >= Math.ceil(total * 0.7)) { chunk = avail; need = avail; break; }
+          if (avail - (3 - rem) >= 4) { chunk = avail - (3 - rem); break; }
+          i += Math.max(1, L);
+        }
+        if (!chunk) { failed = true; break; }
+        if (preBrk) brk(BRK);
+        for (let k = 0; k < chunk; k++) { take(i, t.id, sid); taken.push(i); i++; }
+        need -= chunk; kept += chunk;
       }
-      if (need > 0) {
+      if (failed) {
         taken.forEach(j => free1(j, sid));
         i = i0;
         overflow.push(t.id);
@@ -277,9 +306,9 @@ export function buildPlan({ now = Date.now(), settings, tasks, done }) {
     const quota = dayList.length > 1 ? Math.ceil(tneed / dayList.length / 5) * 5 + 30 : null;
     const o2 = [];
     place(tail, ws, deadline, ex.id, o2, quota);
+    const lastIdx = id => { let k = -1; for (let j = 0; j < N; j++) if (slots[j].task === id) k = j; return k; };
     if (o2.length) {
       // second pass without the quota, keeping the study order: each leftover starts after the tasks before it
-      const lastIdx = id => { let k = -1; for (let j = 0; j < N; j++) if (slots[j].task === id) k = j; return k; };
       for (let j = 0; j < tail.length; j++) {
         const t = tail[j];
         if (!o2.includes(t.id)) continue;
@@ -291,6 +320,47 @@ export function buildPlan({ now = Date.now(), settings, tasks, done }) {
         over.push(...o3);
       }
     }
+    // the triage works on an estimate: give what it dropped a second chance (most important first),
+    // each one after the tasks that come before it in the study order
+    if (over.length) {
+      const order = over.slice().sort((x, y) => tm[x].priority - tm[y].priority || tm[x].seq - tm[y].seq);
+      for (const id of order) {
+        const t = tm[id];
+        let from = idx(headFrom);
+        for (const u of tasks) if (u.sid === ex.id && !u.pinned && u.seq < t.seq) { const li = lastIdx(u.id); if (li + 1 > from) from = li + 1; }
+        if (from >= N || slots[from].t >= deadline) continue;
+        const o4 = [];
+        place([t], slots[from].t, deadline, ex.id, o4);
+        if (!o4.length) over.splice(over.indexOf(id), 1);
+      }
+    }
+  }
+
+  // 3b. tidy up: drop scraps of 10 min or less from a split task when most of it is kept,
+  // then clear breaks that no longer sit between two study slots
+  const segs = {};
+  for (let k = 0; k < N; k++) {
+    const id = slots[k].task;
+    if (!id || id === '__break' || !tm[id] || tm[id].pinned) continue;
+    const s = segs[id] || (segs[id] = []);
+    const lastSeg = s[s.length - 1];
+    if (lastSeg && lastSeg[1] === k) lastSeg[1] = k + 1; else s.push([k, k + 1]);
+  }
+  for (const id in segs) {
+    const s = segs[id];
+    if (s.length < 2) continue;
+    let kept = s.reduce((a, [p, q]) => a + q - p, 0);
+    const keepMin = Math.ceil(tm[id].minutes / 5 * 0.7);
+    for (const [p, q] of s) {
+      if (q - p <= 2 && kept - (q - p) >= keepMin) { for (let k = p; k < q; k++) slots[k].task = null; kept -= q - p; }
+    }
+  }
+  const isTask = k => k >= 0 && k < N && slots[k].task && slots[k].task !== '__break';
+  for (let k = 0; k < N;) {
+    if (slots[k].task !== '__break') { k++; continue; }
+    let j = k; while (j < N && slots[j].task === '__break') j++;
+    if (!isTask(k - 1) || !isTask(j)) for (let q = k; q < j; q++) { slots[q].task = null; slots[q].brk = false; }
+    k = j;
   }
 
   // 4. unused time reserved for an exam (its eve) becomes a light review block for that exam

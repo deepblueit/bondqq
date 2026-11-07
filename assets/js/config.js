@@ -1,5 +1,5 @@
 // Fixed facts: the midterm timetable (Cairo time, UTC+2 in November 2026).
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.0.1';
 export const STUDENT = 'وسام';
 export const HELPER = 'يوسف';
 
