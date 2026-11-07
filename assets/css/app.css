@@ -71,8 +71,8 @@ button { cursor: pointer; border: 0; background: none; }
 :focus-visible { outline: 3px solid color-mix(in srgb, var(--sub) 55%, transparent); outline-offset: 2px; border-radius: 10px; }
 
 /* ---------- top bar ---------- */
-.topbar { position: sticky; top: 0; z-index: 40; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: saturate(1.4) blur(14px); -webkit-backdrop-filter: saturate(1.4) blur(14px); border-bottom: 1px solid var(--line); }
-.tb-in { max-width: 1120px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 14px; }
+.topbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 40; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: saturate(1.4) blur(14px); -webkit-backdrop-filter: saturate(1.4) blur(14px); border-bottom: 1px solid var(--line); }
+.tb-in { max-width: 1120px; margin: 0 auto; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; align-items: center; gap: 14px; }
 .logo { display: flex; align-items: center; gap: 10px; }
 .logo svg { width: 38px; height: 38px; }
 .logo span { display: flex; flex-direction: column; line-height: 1.15; }
@@ -91,14 +91,14 @@ button { cursor: pointer; border: 0; background: none; }
 @media (max-width: 420px) { .logo small { display: none; } .mode-btn span { display: none; } }
 
 /* ---------- bottom nav ---------- */
-.bottom-nav { position: fixed; bottom: 0; inset-inline: 0; z-index: 40; display: grid; grid-template-columns: repeat(4, 1fr); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-top: 1px solid var(--line); padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); }
+.bottom-nav { position: fixed; bottom: 0; inset-inline: 0; z-index: 40; display: grid; grid-template-columns: repeat(4, 1fr); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-top: 1px solid var(--line); padding: 6px max(6px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px)); }
 .bottom-nav .nav-link { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; font-size: .74rem; font-weight: 600; color: var(--muted); border-radius: 14px; }
 .bottom-nav .nav-link .ic { width: 22px; height: 22px; }
 .bottom-nav .nav-link.on { color: var(--ink); background: var(--hl-soft); }
 @media (min-width: 860px) { .bottom-nav { display: none; } body { padding-bottom: 40px; } }
 
 /* ---------- layout ---------- */
-.container { max-width: 1120px; margin: 0 auto; padding: 18px 16px 30px; outline: none; }
+.container { max-width: 1120px; margin: 0 auto; padding-block: 18px 30px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); outline: none; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); padding: 18px; }
 .sec { margin: 26px 0; }
 .sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -315,7 +315,7 @@ a.bl-title:hover { text-decoration: underline; text-decoration-color: var(--sub)
 .lesson-head .sub { font-size: 1.08rem; color: var(--ink-2); }
 .conf-note { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: var(--warn-soft); color: var(--ink); font-size: .9rem; }
 .conf-note .ic { color: var(--warn); margin-top: 4px; }
-.lesson-steps { position: sticky; top: 61px; z-index: 20; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 10px 0; margin: 4px 0 8px; background: linear-gradient(var(--bg) 70%, transparent); }
+.lesson-steps { position: sticky; top: calc(61px + env(safe-area-inset-top, 0px)); z-index: 20; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 10px 0; margin: 4px 0 8px; background: linear-gradient(var(--bg) 70%, transparent); }
 .lesson-steps::-webkit-scrollbar { display: none; }
 .lesson-steps a { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: .82rem; font-weight: 700; color: var(--ink-2); }
 .hook { position: relative; overflow: hidden; background: var(--sub); color: #fff; border: 0; padding: 22px 24px; }
@@ -654,3 +654,7 @@ bdi.en.nw { white-space: nowrap; }
 .btn { max-width: 100%; }
 .lesson-end .btn, .next-up .btn { white-space: normal; text-align: center; line-height: 1.5; }
 .math { display: inline-block; max-width: 100%; overflow-x: auto; overflow-y: hidden; vertical-align: middle; }
+
+body::before { content: ''; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 50; background: var(--bg); }
+.share-box { display: grid; gap: 10px; }
+.share-box textarea { width: 100%; min-height: 90px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--surface-2); direction: ltr; font-size: .8rem; word-break: break-all; }

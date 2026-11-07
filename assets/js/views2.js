@@ -400,7 +400,7 @@ export function lastView(ctx, { sid }) {
   const c = ctx.content[sid];
   const id = `${sid}-night`;
   const html = `${subHeader(ctx, sid, 'last')}
-    <div class="card prose last-night" style="${subStyle(sid)}"><div class="ln-head"><h2>${icon('moon-star')} ملخص ليلة الامتحان</h2><button class="btn small soft" data-act="print">${icon('printer')} اطبعي</button></div>${md(c.lastNight, isMath(sid))}</div>
+    <div class="card prose last-night" style="${subStyle(sid)}"><div class="ln-head"><h2>${icon('moon-star')} ملخص ليلة الامتحان</h2>${/github\.io$|localhost$/.test(location.hostname) ? `<button class="btn small soft" data-act="print">${icon('printer')} اطبعي</button>` : ''}</div>${md(c.lastNight, isMath(sid))}</div>
     <div class="lesson-end card">${isDone(id) ? `<div class="done-msg">${icon('party-popper')}<b>المراجعة خلصت، نامي بدري</b></div>` : `<button class="btn primary big" data-act="task-done" data-id="${id}">${icon('check')} خلصت المراجعة</button>`}<a class="btn soft big" href="#/s/${sid}/morning">${icon('sunrise')} مراجعة الصبح</a></div>`;
   return { html };
 }

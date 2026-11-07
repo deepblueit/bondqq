@@ -382,7 +382,7 @@ export function importView(ctx, params) {
     catch (e) { preview = '<p class="bad">اللينك ده مش سليم.</p>'; }
   }
   const html = `<div class="page-head"><h1>${icon('download')} استيراد تقدم</h1></div>
-    <div class="card form">${preview || `<p class="muted">الصقي لينك التقدم هنا:</p><input class="input" id="impIn" placeholder="https://...#/import/..."><button class="btn primary" data-act="import-paste">${icon('download')} افتحي</button>`}</div>`;
+    <div class="card form">${preview || `<p class="muted">الصقي لينك التقدم أو الكود هنا:</p><input class="input" id="impIn" dir="ltr" placeholder="https://...#/import/... أو الكود"><button class="btn primary" data-act="import-paste">${icon('download')} افتحي</button>`}</div>`;
   return { html };
 }
 

@@ -4,7 +4,7 @@ import { S, save, settings, setSetting, isDone, markDone, unmarkDone, exportCode
 import { buildTasks, buildPlan, taskMap, contentSig } from './plan.js';
 import { homeView, planView, settingsView, guideView, importView, onboarding } from './views1.js';
 import { subjectView, aboutView, lessonView, bankView, drillView, mocksView, mockView, cardsView, lastView, morningView, labView, handleQ } from './views2.js';
-import { toast, celebrate, $, $$ } from './ui.js';
+import { toast, celebrate, modal, $, $$ } from './ui.js';
 
 const ctx = { content: {}, tasks: [], tm: {}, qIndex: {}, route: null };
 
@@ -154,8 +154,16 @@ document.addEventListener('click', e => {
       save(); ctx.replan('اتظبطت أيام الشغل'); break;
     }
     case 'share': {
-      const url = `${location.origin}${location.pathname}#/import/${exportCode()}`;
-      (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => toast('اتنسخ اللينك، ابعتيه'), () => prompt('انسخي اللينك ده:', url));
+      const code = exportCode();
+      const onPages = /github\.io$|localhost$/.test(location.hostname);
+      const text = onPages ? `${location.origin}${location.pathname}#/import/${code}` : code;
+      const m = modal(`<div class="share-box"><h2>${icon('share-2')} ابعتي ده لـيوسف</h2><p class="muted">${onPages ? 'ده لينك فيه تقدمك. لما يفتحه على موبايله هيشوف وصلتي لفين.' : 'ده كود فيه تقدمك. يفتح صفحة "استيراد تقدم" من الإعدادات ويلصقه.'}</p><textarea id="shareText" readonly>${text}</textarea><button class="btn primary" id="shareCopy">${icon('link')} انسخي</button></div>`);
+      const ta = m.el.querySelector('#shareText');
+      m.el.querySelector('#shareCopy').onclick = () => {
+        const done = () => toast('اتنسخ، ابعتيه');
+        try { navigator.clipboard.writeText(text).then(done, () => { ta.select(); toast('علمي على النص وانسخيه', 'info'); }); }
+        catch (err) { ta.select(); toast('علمي على النص وانسخيه', 'info'); }
+      };
       break;
     }
     case 'import': {
@@ -164,14 +172,16 @@ document.addEventListener('click', e => {
       break;
     }
     case 'import-paste': {
-      const v = ($('#impIn') || {}).value || '';
-      const m = v.match(/#\/import\/([A-Za-z0-9_-]+)/);
-      if (m) location.hash = `#/import/${m[1]}`; else toast('اللينك مش سليم', 'warn');
+      const v = (($('#impIn') || {}).value || '').trim();
+      const m = v.match(/#\/import\/([A-Za-z0-9_-]+)/) || v.match(/^([A-Za-z0-9_-]{8,})$/);
+      if (m) location.hash = `#/import/${m[1]}`; else toast('اللينك أو الكود مش سليم', 'warn');
       break;
     }
-    case 'reset':
-      if (confirm('متأكدة؟ هيتمسح كل التقدم والخطة.')) { resetAll(); makePlan(); toast('بدأنا من الأول', 'info'); location.hash = '#/'; render(); }
+    case 'reset': {
+      const m = modal(`<div class="share-box"><h2>${icon('triangle-alert')} متأكدة؟</h2><p>هيتمسح كل التقدم والخطة من الجهاز ده، ومش هينفع نرجعه.</p><div class="row"><button class="btn danger" id="doReset">${icon('rotate-ccw')} أيوه امسحي</button><button class="btn soft" data-close>لأ، خلاص</button></div></div>`);
+      m.el.querySelector('#doReset').onclick = () => { m.close(); resetAll(); makePlan(); toast('بدأنا من الأول', 'info'); location.hash = '#/'; render(); };
       break;
+    }
     case 'flip': btn.classList.toggle('flipped'); break;
     case 'mem-hide': {
       const box = btn.closest('.mem'); box.classList.toggle('hidden-mode');
