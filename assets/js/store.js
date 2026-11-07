@@ -28,9 +28,18 @@ export const settings = () => load().settings;
 export function setSetting(k, v) { load().settings[k] = v; save(); }
 
 export function isDone(id) { return !!load().done[id]; }
+// points are given once per item, so unchecking and checking again does not farm them
+export function award(key, xp) {
+  const s = load();
+  s.awarded = s.awarded || {};
+  if (s.awarded[key]) return false;
+  s.awarded[key] = 1;
+  addXP(xp);
+  return true;
+}
 export function markDone(id, xp = 0) {
   const s = load();
-  if (!s.done[id]) { s.done[id] = Date.now(); addXP(xp); }
+  if (!s.done[id]) { s.done[id] = Date.now(); award(id, xp); }
   save();
 }
 export function unmarkDone(id) { delete load().done[id]; save(); }

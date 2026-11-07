@@ -123,10 +123,12 @@ export function buildPlan({ now = Date.now(), settings, tasks, done }) {
     }
     if (tm[nId] && !done[nId]) {
       const sl = sleepOf(d - DAY) - 15 * MIN;
-      let need = tm[nId].minutes / 5;
+      let need = tm[nId].minutes / 5, first = -1;
       for (let i = idx(sl) - 1; i >= 0 && need > 0 && slots[i].t >= sl - 6 * HOUR; i--) {
-        if (usable(slots[i], ex.id)) { slots[i].task = nId; need--; }
+        if (usable(slots[i], ex.id)) { slots[i].task = nId; need--; first = i; }
       }
+      // keep a 10-minute break before the night review (dropped later if nothing is studied right before it)
+      for (let k = first - 1; k >= 0 && k >= first - BRK; k--) if (usable(slots[k], ex.id)) { slots[k].task = '__break'; slots[k].brk = true; }
     }
     // the rest of the exam morning is breakfast / getting ready
     range(wakeOf(d), at(...ymd(d), ...hmArr(st.leave)), x => { if (x.type === 'free' && !x.task) x.type = 'prep'; });
@@ -258,6 +260,15 @@ export function buildPlan({ now = Date.now(), settings, tasks, done }) {
     return i;
   }
 
+  const snap = () => ({ s: slots.map(x => x.task), b: slots.map(x => x.brk), u: { ...used }, us: { ...usedSid } });
+  const restore = sn => {
+    for (let k = 0; k < N; k++) { slots[k].task = sn.s[k]; slots[k].brk = sn.b[k]; }
+    for (const k of Object.keys(used)) delete used[k];
+    Object.assign(used, sn.u);
+    for (const k of Object.keys(usedSid)) delete usedSid[k];
+    Object.assign(usedSid, sn.us);
+  };
+
   const overflow = {};
   let prevRestEnd = start, prevWs = start;
   for (const ex of SUBJECTS) {
@@ -279,47 +290,89 @@ export function buildPlan({ now = Date.now(), settings, tasks, done }) {
       let k = -1; for (let j = list.length - 1; j >= 0; j--) if (list[j].priority === worst) { k = j; break; }
       over.push(list[k].id); list.splice(k, 1);
     }
-    const need = sum(list);
-    const capDef = cap(ws, deadline, ex.id);
-    let head = [], tail = list;
-    if (need > capDef) {
-      // the window is too small: the last tasks fill it, the first ones start earlier
-      tail = []; let acc = 0;
-      for (let j = list.length - 1; j >= 0; j--) { if (acc + list[j].minutes <= capDef * 0.97) { tail.unshift(list[j]); acc += list[j].minutes; } else break; }
-      head = list.slice(0, list.length - tail.length);
-    }
-    if (head.length) {
-      // spread the head over the days before the window too, so no single day gets crushed
-      const hdays = new Set(); range(headFrom, ws, (x, i) => { if (usable(x, ex.id)) hdays.add(dayOfSlot[i]); });
-      const hList = [...hdays].filter(dd => cap(Math.max(headFrom, dd + 4 * HOUR), Math.min(ws, dd + 28 * HOUR), ex.id) >= 45);
-      const hq = hList.length > 1 ? Math.ceil(sum(head) / hList.length / 5) * 5 + 30 : null;
-      const o1 = [];
-      place(head, headFrom, ws, ex.id, o1, hq);
-      let back = head.filter(t => o1.includes(t.id));
-      if (back.length && hq) { const o1b = []; place(back, headFrom, ws, ex.id, o1b); back = back.filter(t => o1b.includes(t.id)); }
-      tail = back.concat(tail);
-    }
-    // spread the tail over the days of the window (daily quota), then fill what is left as early as possible
-    const days = new Set(); range(ws, deadline, (x, i) => { if (usable(x, ex.id)) days.add(dayOfSlot[i]); });
-    const dayList = [...days].filter(dd => cap(Math.max(ws, dd + 4 * HOUR), Math.min(deadline, dd + 28 * HOUR), ex.id) >= 45);
-    const tneed = sum(tail);
-    const quota = dayList.length > 1 ? Math.ceil(tneed / dayList.length / 5) * 5 + 30 : null;
-    const o2 = [];
-    place(tail, ws, deadline, ex.id, o2, quota);
     const lastIdx = id => { let k = -1; for (let j = 0; j < N; j++) if (slots[j].task === id) k = j; return k; };
-    if (o2.length) {
-      // second pass without the quota, keeping the study order: each leftover starts after the tasks before it
-      for (let j = 0; j < tail.length; j++) {
-        const t = tail[j];
-        if (!o2.includes(t.id)) continue;
-        let from = idx(ws);
-        for (let q = 0; q < j; q++) { const li = lastIdx(tail[q].id); if (li + 1 > from) from = li + 1; }
-        if (from >= N) { over.push(t.id); continue; }
-        const o3 = [];
-        place([t], slots[from].t, deadline, ex.id, o3);
-        over.push(...o3);
+    // lay out a list of tasks for this subject; returns the ids that did not fit
+    const layout = lst => {
+      const out = [];
+      const need = sum(lst);
+      const capDef = cap(ws, deadline, ex.id);
+      let head = [], tail = lst;
+      if (need > capDef) {
+        // the window is too small: the last tasks fill it, the first ones start earlier
+        tail = []; let acc = 0;
+        for (let j = lst.length - 1; j >= 0; j--) { if (acc + lst[j].minutes <= capDef * 0.97) { tail.unshift(lst[j]); acc += lst[j].minutes; } else break; }
+        head = lst.slice(0, lst.length - tail.length);
       }
+      if (head.length) {
+        // spread the head over the days before the window too, so no single day gets crushed
+        const hdays = new Set(); range(headFrom, ws, (x, i) => { if (usable(x, ex.id)) hdays.add(dayOfSlot[i]); });
+        const hList = [...hdays].filter(dd => cap(Math.max(headFrom, dd + 4 * HOUR), Math.min(ws, dd + 28 * HOUR), ex.id) >= 45);
+        const hq = hList.length > 1 ? Math.ceil(sum(head) / hList.length / 5) * 5 + 30 : null;
+        const o1 = [];
+        place(head, headFrom, ws, ex.id, o1, hq);
+        let back = head.filter(t => o1.includes(t.id));
+        if (back.length && hq) { const o1b = []; place(back, headFrom, ws, ex.id, o1b); back = back.filter(t => o1b.includes(t.id)); }
+        tail = back.concat(tail);
+      }
+      // spread the tail over the days of the window (daily quota), then fill what is left as early as possible
+      const days = new Set(); range(ws, deadline, (x, i) => { if (usable(x, ex.id)) days.add(dayOfSlot[i]); });
+      const dayList = [...days].filter(dd => cap(Math.max(ws, dd + 4 * HOUR), Math.min(deadline, dd + 28 * HOUR), ex.id) >= 45);
+      const tneed = sum(tail);
+      const quota = dayList.length > 1 ? Math.ceil(tneed / dayList.length / 5) * 5 + 30 : null;
+      const o2 = [];
+      place(tail, ws, deadline, ex.id, o2, quota);
+      if (o2.length) {
+        // second pass without the quota, keeping the study order: each leftover starts after the tasks before it
+        for (let j = 0; j < tail.length; j++) {
+          const t = tail[j];
+          if (!o2.includes(t.id)) continue;
+          let from = idx(ws);
+          for (let q = 0; q < j; q++) { const li = lastIdx(tail[q].id); if (li + 1 > from) from = li + 1; }
+          if (from >= N) { out.push(t.id); continue; }
+          const o3 = [];
+          place([t], slots[from].t, deadline, ex.id, o3);
+          out.push(...o3);
+        }
+      }
+      return out;
+    };
+    // basic tasks the estimate left out still get a real try (the repair below makes room for them if it can)
+    const triBasic = over.filter(id => tm[id].priority === 1);
+    if (triBasic.length) {
+      for (const id of triBasic) over.splice(over.indexOf(id), 1);
+      list = list.concat(triBasic.map(id => tm[id])).sort((a, b) => a.seq - b.seq);
     }
+    const sn0 = snap();
+    let res = layout(list), dropped = [];
+    const basicMissing = r => r.some(id => tm[id].priority === 1);
+    if (basicMissing(res)) {
+      // a basic task did not fit. Try, in this order of preference: the same tasks with a basic mock moved
+      // a little earlier (before the drills, at most one lesson), then leaving out less important tasks
+      // one at a time (least important, latest first) with each of those orders.
+      const orders = [list];
+      const mk = res.find(x => tm[x].priority === 1 && tm[x].kind === 'mock');
+      if (mk) {
+        const pos = list.findIndex(t => t.id === mk);
+        let lessons = 0;
+        for (let back = 1; back <= 3 && pos - back >= 0; back++) {
+          if (list[pos - back].kind === 'lesson' && ++lessons > 1) break;
+          const o = list.slice(); const [m] = o.splice(pos, 1); o.splice(pos - back, 0, m); orders.push(o);
+        }
+      }
+      const cands = list.filter(t => t.priority > 1).sort((a, b) => b.priority - a.priority || b.seq - a.seq);
+      let fixed = false;
+      search: for (let k = 0; k <= cands.length; k++) {
+        const drop = cands.slice(0, k).map(t => t.id);
+        for (const ord of orders) {
+          if (k === 0 && ord === list) continue; // already tried
+          restore(sn0);
+          res = layout(ord.filter(t => !drop.includes(t.id)));
+          if (!basicMissing(res)) { dropped = drop; fixed = true; break search; }
+        }
+      }
+      if (!fixed) { restore(sn0); dropped = []; res = layout(list); }
+    }
+    over.push(...res, ...dropped);
     // the triage works on an estimate: give what it dropped a second chance (most important first),
     // each one after the tasks that come before it in the study order
     if (over.length) {
@@ -364,12 +417,19 @@ export function buildPlan({ now = Date.now(), settings, tasks, done }) {
   }
 
   // 4. unused time reserved for an exam (its eve) becomes a light review block for that exam
+  // (with a 10-minute break between it and any study right before or after it)
   for (let i = 0; i < N;) {
     const x = slots[i];
     if (x.type === 'free' && !x.task && x.owner) {
       let j = i; while (j < N && slots[j].type === 'free' && !slots[j].task && slots[j].owner === x.owner) j++;
-      const len = j - i;
-      if (len >= 6) for (let k = Math.max(i, j - 12); k < j; k++) slots[k].task = `${x.owner}-extra`;
+      const a0 = isTask(i - 1) ? i + BRK : i;
+      const b0 = isTask(j) ? j - BRK : j;
+      if (b0 - a0 >= 6) {
+        const from = Math.max(a0, b0 - 12);
+        for (let k = from; k < b0; k++) slots[k].task = `${x.owner}-extra`;
+        if (from === a0) for (let k = i; k < a0; k++) { slots[k].task = '__break'; slots[k].brk = true; }
+        for (let k = b0; k < j; k++) { slots[k].task = '__break'; slots[k].brk = true; }
+      }
       i = j;
     } else i++;
   }

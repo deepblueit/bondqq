@@ -49,6 +49,8 @@ export function inline(text, math = false) {
 export function visual(v, math = false) {
   if (!v || !v.type) return '';
   const I = s => inline(s, math);
+  // steps already get a number badge, so drop a matching number typed at the start of the label
+  const L = (s, i) => I(String(s || '').replace(new RegExp(`^\\s*${i + 1}\\s*[.)\\-]?\\s+`), ''));
   const title = v.title ? `<div class="viz-title">${icon('sparkles')}<span>${I(v.title)}</span></div>` : '';
   let body = '';
   switch (v.type) {
@@ -64,12 +66,12 @@ export function visual(v, math = false) {
     }
     case 'flow':
       body = `<ol class="viz-flow">${(v.steps || []).map((s, i) => `
-        <li style="--i:${i}"><span class="num">${i + 1}</span><div><b>${I(s.label)}</b>${s.sub ? `<small>${I(s.sub)}</small>` : ''}</div></li>`).join('')}</ol>`;
+        <li style="--i:${i}"><span class="num">${i + 1}</span><div><b>${L(s.label, i)}</b>${s.sub ? `<small>${I(s.sub)}</small>` : ''}</div></li>`).join('')}</ol>`;
       break;
     case 'cycle': {
       const n = (v.steps || []).length;
       body = `<div class="viz-cycle" style="--n:${n}">${(v.steps || []).map((s, i) => `
-        <div class="cyc-step" style="--i:${i}"><span class="num">${i + 1}</span><b>${I(s.label)}</b>${s.sub ? `<small>${I(s.sub)}</small>` : ''}</div>`).join('')}
+        <div class="cyc-step" style="--i:${i}"><span class="num">${i + 1}</span><b>${L(s.label, i)}</b>${s.sub ? `<small>${I(s.sub)}</small>` : ''}</div>`).join('')}
         <div class="cyc-center">${icon('refresh-cw')}</div></div>`;
       break;
     }
@@ -91,7 +93,7 @@ export function visual(v, math = false) {
       break;
     case 'numbers':
       body = `<div class="viz-numbers">${(v.items || []).map((c, i) => `
-        <div class="vn" style="--i:${i}"><span class="vn-val" dir="ltr">${esc(c.value)}</span><b>${I(c.label || '')}</b>${c.sub ? `<small>${I(c.sub)}</small>` : ''}</div>`).join('')}</div>`;
+        <div class="vn" style="--i:${i}"><span class="vn-val" dir="auto">${esc(c.value)}</span><b>${I(c.label || '')}</b>${c.sub ? `<small>${I(c.sub)}</small>` : ''}</div>`).join('')}</div>`;
       break;
     case 'timeline':
       body = `<ol class="viz-timeline">${(v.items || []).map((c, i) => `

@@ -5,6 +5,7 @@ import { buildTasks, buildPlan, taskMap, contentSig } from './plan.js';
 import { homeView, planView, settingsView, guideView, importView, onboarding } from './views1.js';
 import { subjectView, aboutView, lessonView, bankView, drillView, mocksView, mockView, cardsView, lastView, morningView, labView, handleQ } from './views2.js';
 import { toast, celebrate, modal, $, $$ } from './ui.js';
+import { count } from './time.js';
 
 const ctx = { content: {}, tasks: [], tm: {}, qIndex: {}, route: null };
 
@@ -27,7 +28,7 @@ function makePlan() {
   save();
 }
 
-ctx.replan = msg => { makePlan(); if (msg) toast(msg); render(); };
+ctx.replan = msg => { makePlan(); if (msg) toast(msg); render({ keepScroll: true }); };
 ctx.render = () => render();
 ctx.onProgress = () => updateChrome();
 
@@ -74,6 +75,12 @@ function resolve({ seg, query }) {
   return ['home', homeView, {}];
 }
 
+// jump without the smooth scrolling the page uses for in-lesson links
+function jump(y) {
+  const h = document.documentElement; const prev = h.style.scrollBehavior;
+  h.style.scrollBehavior = 'auto'; window.scrollTo(0, y); h.style.scrollBehavior = prev;
+}
+
 let tickTimer = 0;
 function render({ keepScroll = false } = {}) {
   const r = parseHash();
@@ -84,11 +91,13 @@ function render({ keepScroll = false } = {}) {
   main.innerHTML = out.html;
   main.dataset.view = name;
   ctx.route = name;
+  if (name !== 'lesson') document.body.classList.remove('present');
   out.mount && out.mount(main);
-  if (window.katex === undefined) { /* math renders as code until KaTeX loads */ }
+  const subTab = main.querySelector('.sub-tabs .tab.on');
+  if (subTab) { const bar = subTab.parentElement; bar.scrollLeft += subTab.getBoundingClientRect().left - bar.getBoundingClientRect().left - (bar.clientWidth - subTab.offsetWidth) / 2; }
   updateChrome(name);
-  if (keepScroll) window.scrollTo(0, y);
-  else if (!location.hash.includes('#ls-')) window.scrollTo(0, 0);
+  if (keepScroll) jump(y);
+  else if (!location.hash.includes('#ls-')) jump(0);
   clearInterval(tickTimer);
   if (out.tick) tickTimer = setInterval(() => { if (!document.hidden && ctx.route === name && !main.contains(document.activeElement) ) render({ keepScroll: true }); }, out.tick);
 }
@@ -140,12 +149,15 @@ document.addEventListener('click', e => {
       break;
     case 'mode-toggle':
       setSetting('mode', settings().mode === 'together' ? 'solo' : 'together');
+      toast(settings().mode === 'together' ? 'وضع المذاكرة مع يوسف' : 'وضع المذاكرة لوحدك', 'info');
       render({ keepScroll: true });
       break;
     case 'theme': setSetting('theme', btn.dataset.v); applyTheme(); render({ keepScroll: true }); break;
     case 'theme-toggle': {
       const dark = document.documentElement.getAttribute('data-theme') === 'dark' || (!document.documentElement.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
-      setSetting('theme', dark ? 'light' : 'dark'); applyTheme(); break;
+      setSetting('theme', dark ? 'light' : 'dark'); applyTheme();
+      if (ctx.route === 'settings') render({ keepScroll: true });
+      break;
     }
     case 'font': setSetting('font', +btn.dataset.v); applyTheme(); render({ keepScroll: true }); break;
     case 'work-day': {
@@ -167,8 +179,13 @@ document.addEventListener('click', e => {
       break;
     }
     case 'import': {
-      try { const p = importCode(btn.dataset.code); toast(`اتضاف ${(p.d || []).length} مهمة`); location.hash = '#/'; }
-      catch (err) { toast('اللينك مش سليم', 'warn'); }
+      try {
+        const p = importCode(btn.dataset.code);
+        const n = (p.d || []).length;
+        toast(n ? `اتضاف ${count(n, 'مهمة', 'مهمتين', 'مهام')} للتقدم` : 'اللينك مفيهوش مهام خلصانة لسه', n ? 'ok' : 'info');
+        location.hash = '#/';
+        if (!settings().onboarded) setTimeout(() => onboarding(ctx), 400);
+      } catch (err) { toast('اللينك مش سليم', 'warn'); }
       break;
     }
     case 'import-paste': {
@@ -179,7 +196,7 @@ document.addEventListener('click', e => {
     }
     case 'reset': {
       const m = modal(`<div class="share-box"><h2>${icon('triangle-alert')} متأكدة؟</h2><p>هيتمسح كل التقدم والخطة من الجهاز ده، ومش هينفع نرجعه.</p><div class="row"><button class="btn danger" id="doReset">${icon('rotate-ccw')} أيوه امسحي</button><button class="btn soft" data-close>لأ، خلاص</button></div></div>`);
-      m.el.querySelector('#doReset').onclick = () => { m.close(); resetAll(); makePlan(); toast('بدأنا من الأول', 'info'); location.hash = '#/'; render(); };
+      m.el.querySelector('#doReset').onclick = () => { m.close(); resetAll(); applyTheme(); makePlan(); toast('بدأنا من الأول', 'info'); location.hash = '#/'; render(); setTimeout(() => onboarding(ctx), 400); };
       break;
     }
     case 'flip': btn.classList.toggle('flipped'); break;
@@ -189,6 +206,7 @@ document.addEventListener('click', e => {
       break;
     }
     case 'present': document.body.classList.toggle('present'); break;
+    case 'reload': e.preventDefault(); render(); break;
     case 'print': window.print(); break;
     case 'onboard': onboarding(ctx); break;
   }
@@ -201,6 +219,12 @@ document.addEventListener('click', e => {
 });
 
 document.addEventListener('change', e => {
+  const t = e.target;
+  if (ctx.route === 'settings' && t.dataset && (t.dataset.set || t.dataset.work)) {
+    if (t.dataset.set) { setSetting(t.dataset.set, t.dataset.set === 'dailyCap' ? +t.value : t.value); ctx.replan('اتظبطت الخطة على المواعيد الجديدة'); }
+    else { const w = settings().work; w[t.dataset.work] = t.type === 'checkbox' ? t.checked : t.value; save(); ctx.replan('اتظبطت الخطة على مواعيد الشغل'); }
+    return;
+  }
   const s = e.target.closest('select[data-nav]');
   if (s) location.hash = s.dataset.nav.replace('__U__', encodeURIComponent(s.value)).replace(/([?&])unit=(&|$)/, '$1').replace(/[?&]$/, '');
 });

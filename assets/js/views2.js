@@ -2,7 +2,7 @@
 import { SUBJECTS, SUBJECT, HELPER, STUDENT, TYPE_LABEL, PRIORITY_LABEL, CONF_LABEL } from './config.js';
 import { icon } from './icons.js';
 import { esc, md, inline, visual } from './render.js';
-import { S, save, settings, isDone, markDone, qStatus, setQ, cardBox, setCard, addMock } from './store.js';
+import { S, save, settings, isDone, markDone, qStatus, setQ, cardBox, setCard, addMock, award } from './store.js';
 import { time, dateLong, weekday, until, dur, MIN, count } from './time.js';
 import { taskRoute } from './plan.js';
 import { ring, chip, subStyle, toast, celebrate, emptyState, makeTimer, $, $$ } from './ui.js';
@@ -12,7 +12,7 @@ const isMath = sid => sid === 'stats';
 
 function needContent(ctx, sid) {
   const s = SUBJECT[sid];
-  if (!s) return { html: emptyState('المادة دي مش موجودة', '', 'circle-help') };
+  if (!s) return { html: emptyState('المادة دي مش موجودة', '', 'circle-help', ['#/', 'للرئيسية']) };
   if (!ctx.content[sid]) return { html: subHeader(ctx, sid, '') + emptyState('المحتوى بيتجهز', 'شوية وهيكون هنا. الخطة حاجزاله وقته بالفعل.', 'hourglass') };
   return null;
 }
@@ -67,7 +67,7 @@ export function lessonView(ctx, { sid, uid }) {
   const miss = needContent(ctx, sid); if (miss) return miss;
   const c = ctx.content[sid];
   const i = c.units.findIndex(u => u.id === uid);
-  if (i < 0) return { html: emptyState('الدرس ده مش موجود', '', 'circle-help') };
+  if (i < 0) return { html: emptyState('الدرس ده مش موجود', '', 'circle-help', [`#/s/${sid}`, 'لدروس المادة']) };
   const u = c.units[i];
   const m = isMath(sid);
   const mode = settings().mode;
@@ -110,7 +110,7 @@ export function lessonView(ctx, { sid, uid }) {
       <div class="terms">${u.terms.map(t => `<button class="term" data-act="flip"><span class="tf-front"><b>${inline(t.ar, m)}</b><em dir="ltr">${esc(t.en || '')}</em></span><span class="tf-back">${inline(t.def, m)}</span></button>`).join('')}</div></section>` : ''}
 
     ${u.memorize ? `<section id="ls-mem" class="mem card"><div class="mem-head"><h2>${icon('brain')} ${inline(u.memorize.title, m)}</h2><button class="btn small soft" data-act="mem-hide">${icon('eye-off')} خبي واختبري نفسك</button></div>
-      <ol class="mem-list">${(u.memorize.items || []).map(x => `<li><span>${inline(x, m)}</span></li>`).join('')}</ol>
+      <ol class="mem-list">${(u.memorize.items || []).map(x => `<li><span>${inline(String(x).replace(/^\s*\d+[.)\-]\s+/, ''), m)}</span></li>`).join('')}</ol>
       ${u.memorize.trick ? `<div class="trick">${icon('wand-sparkles')}<div><b>تريكة الحفظ</b><p>${inline(u.memorize.trick, m)}</p></div></div>` : ''}</section>` : ''}
 
     <section id="ls-act" class="sec"><div class="sec-head"><h2>${icon(mode === 'together' ? 'users' : 'user')} ${mode === 'together' ? `نشاط مع ${HELPER}` : 'نشاط لوحدك'}</h2><button class="mini-link" data-act="mode" data-v="${mode === 'together' ? 'solo' : 'together'}">${mode === 'together' ? 'أنا لوحدي دلوقتي' : `${HELPER} معايا دلوقتي`}</button></div>
@@ -185,7 +185,9 @@ export function handleQ(ctx, act, btn) {
   if (act === 'key') { keyScore(card); return true; }
   if (act === 'q-rate') {
     setQ(q.id, btn.dataset.v); card.classList.remove('known', 'review'); card.classList.add(btn.dataset.v);
-    if (btn.dataset.v === 'known') { S().xp += 5; save(); }
+    if (btn.dataset.v === 'known') award('q:' + q.id, 5);
+    const head = card.querySelector('.q-head');
+    if (head) { let chipEl = head.querySelector('.q-status'); if (!chipEl) { chipEl = document.createElement('span'); head.appendChild(chipEl); } chipEl.className = `q-status ${btn.dataset.v}`; chipEl.textContent = btn.dataset.v === 'known' ? 'عارفاه' : 'محتاجة أرجعله'; }
     toast(btn.dataset.v === 'known' ? 'تمام، اتسجل إنك عارفاه' : 'اتسجل، هيظهرلك في المراجعة', btn.dataset.v === 'known' ? 'ok' : 'info');
     ctx.onProgress && ctx.onProgress();
     return true;
@@ -261,7 +263,7 @@ export function drillQuestions(c, k, nd) {
 
 export function drillView(ctx, { tid }) {
   const t = ctx.tm[tid];
-  if (!t) return { html: emptyState('المهمة دي مش موجودة', '', 'circle-help') };
+  if (!t) return { html: emptyState('المهمة دي مش موجودة', '', 'circle-help', ['#/plan', 'للخطة']) };
   const sid = t.sid;
   const miss = needContent(ctx, sid); if (miss) return miss;
   const c = ctx.content[sid];
@@ -297,7 +299,7 @@ export function mockView(ctx, { sid, i }) {
   const miss = needContent(ctx, sid); if (miss) return miss;
   const c = ctx.content[sid];
   const mk = c.mocks[+i];
-  if (!mk) return { html: emptyState('النموذج ده مش موجود', '', 'circle-help') };
+  if (!mk) return { html: emptyState('النموذج ده مش موجود', '', 'circle-help', [`#/s/${sid}/mocks`, 'للنماذج']) };
   const qs = mk.questions.map(id => ctx.qIndex[id]).filter(Boolean);
   const ord = ['الأول', 'الثاني', 'الثالث', 'الرابع', 'الخامس', 'السادس', 'السابع', 'الثامن'];
   const html = `${subHeader(ctx, sid, 'mocks')}
@@ -334,7 +336,9 @@ export function mockView(ctx, { sid, i }) {
           }
         });
         el.querySelector('.paper-actions').innerHTML = `<button class="btn primary big" data-act="mock-score">${icon('calculator')} احسبي درجتي</button>`;
-        el.querySelector('[data-act="mock-score"]').addEventListener('click', () => {
+        let scored = false;
+        el.querySelector('[data-act="mock-score"]').addEventListener('click', e => {
+          e.currentTarget.innerHTML = `${icon('calculator')} احسبي تاني بعد ما تعدلي العلامات`;
           let score = 0, max = 0;
           el.querySelectorAll('.q-card').forEach(card => {
             const q = ctx.qIndex[card.dataset.qid];
@@ -343,13 +347,17 @@ export function mockView(ctx, { sid, i }) {
             else { const ks = [...card.querySelectorAll('.keys input')]; score += ks.length ? w * ks.filter(k => k.checked).length / ks.length : 0; }
           });
           const pct = Math.round(100 * score / max);
-          addMock(`${sid}-m${+i + 1}`, score, max);
-          markDone(`${sid}-m${+i + 1}`, 60);
+          // the first press records the result; pressing again after fixing the ticks updates it
+          const mid = `${sid}-m${+i + 1}`;
+          if (!scored) addMock(mid, score, max);
+          else { const arr = S().mocks[mid] || []; if (arr.length) { arr[arr.length - 1].score = score; arr[arr.length - 1].max = max; save(); } }
+          markDone(mid, 60);
           const r = el.querySelector('.mock-result');
           r.hidden = false;
           r.innerHTML = `<div class="result ${pct >= 75 ? 'ok' : pct >= 50 ? 'mid' : 'low'}">${ring(pct / 100, 96, 10)}<div><b>${pct}%</b><p>${pct >= 75 ? 'ممتاز! كده إنتي جاهزة للمادة دي.' : pct >= 50 ? 'كويس، ارجعي للنقط الناقصة في الأسئلة اللي درجتها قليلة.' : 'ولا يهمك، ده تدريب. ارجعي للدروس اللي أسئلتها وقعت وبعدين جربي النموذج التاني.'}</p></div></div>`;
           r.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          if (pct >= 60) celebrate(true);
+          if (pct >= 60 && !scored) celebrate(true);
+          scored = true;
           ctx.onProgress && ctx.onProgress();
         });
         toast('صححي كل سؤال بالنقط، وبعدين احسبي الدرجة', 'info');
@@ -382,7 +390,7 @@ export function cardsView(ctx, { sid, query }) {
           return;
         }
         const x = queue[k];
-        stage.innerHTML = `<div class="fc-count">${k + 1} / ${queue.length}</div>
+        stage.innerHTML = `<div class="fc-count">كارت ${k + 1} من ${queue.length}</div>
           <button class="flash" id="flash"><span class="fl-front">${inline(x.front, isMath(sid))}<small>${icon('rotate-ccw')} اضغطي تشوفي الإجابة</small></span><span class="fl-back">${inline(x.back, isMath(sid))}</span></button>
           <div class="fc-actions"><button class="btn warn big" id="fcNo">${icon('rotate-ccw')} لسه</button><button class="btn ok big" id="fcYes">${icon('check')} عارفاها</button></div>`;
         stage.querySelector('#flash').onclick = e => e.currentTarget.classList.toggle('flipped');

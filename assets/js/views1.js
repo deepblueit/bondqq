@@ -1,5 +1,5 @@
 // Home, plan, settings, guide, import, onboarding.
-import { SUBJECTS, SUBJECT, STUDENT, HELPER, DEFAULT_SETTINGS } from './config.js';
+import { SUBJECTS, SUBJECT, STUDENT, HELPER, DEFAULT_SETTINGS, PRIORITY_LABEL } from './config.js';
 import { icon } from './icons.js';
 import { esc, md } from './render.js';
 import { S, save, settings, setSetting, isDone, markDone, unmarkDone, exportCode, importCode, decodeCode, resetAll } from './store.js';
@@ -78,7 +78,9 @@ export function homeView(ctx) {
   const miss = missed(plan, st.done, now);
 
   let nowCard = '';
-  if (!plan || !plan.blocks.length) {
+  if (plan && plan.finished) {
+    nowCard = `<div class="now-card card calm"><div class="now-head">${icon('party-popper')}<span>خلصتي كل الامتحانات</span></div><p class="muted">ألف مبروك يا ${STUDENT}. ارتاحي بقى، تستاهلي.</p></div>`;
+  } else if (!plan || !plan.blocks.length) {
     nowCard = `<div class="now-card card"><h3>${icon('calendar-clock')} الخطة لسه متعملتش</h3><button class="btn primary" data-act="replan">${icon('wand-sparkles')} اعمليلي الخطة</button></div>`;
   } else {
     const t = cur && cur.type === 'study' ? ctx.tm[cur.task] : null;
@@ -110,7 +112,7 @@ export function homeView(ctx) {
         extra: ['zap', 'وقت تثبيت', 'لفي على الأسئلة المتوقعة والكروت.'],
         warmup: ['play', 'جهزي نفسك', 'ورقة وقلم وكوباية مية، واقفلي الإشعارات. المذاكرة هتبدأ حالا.'],
       };
-      const [ic, h, sub] = msgs[ct] || (t && isDone(t.id) ? ['party-popper', 'سابقة الخطة!', 'خلصتي المطلوب دلوقتي، تقدري تبدأي اللي بعده.'] : ['sparkles', 'يلا بينا', '']);
+      const [ic, h, sub] = msgs[ct] || (t && isDone(t.id) ? ['party-popper', 'سابقة الخطة!', 'خلصتي المطلوب دلوقتي، تقدري تبدأي اللي بعده.'] : !cur && plan.start > now ? ['clock', 'الخطة بتبدأ كمان شوية', 'جهزي ورقة وقلم وكوباية مية، وابدأي باللي تحت.'] : ['sparkles', 'يلا بينا', 'ابدأي باللي جاي في الخطة.']);
       nowCard = `<div class="now-card card calm">
         <div class="now-head">${icon(ic)}<span>${h}</span>${cur ? `<span class="now-time">لحد ${time(cur.e)}</span>` : ''}</div>
         <p class="muted">${sub}</p>
@@ -195,10 +197,12 @@ function heroLine(ex, now) {
 }
 
 // ---------- PLAN ----------
+let overOpen = null; // remembers whether the "did not fit" list was opened, across the 1-minute refresh
 export function planView(ctx, params) {
   const st = S();
   const plan = st.plan;
   const now = Date.now();
+  if (plan && plan.finished) return { html: `<div class="page-head"><h1>${icon('calendar-clock')} الخطة بالساعة</h1></div><div class="card center"><h2>${icon('party-popper')} خلصتي كل الامتحانات</h2><p>ألف مبروك يا ${STUDENT}. الخطة خلصت مهمتها.</p></div>` };
   if (!plan || !plan.blocks.length) return { html: `<div class="page-head"><h1>${icon('calendar-clock')} الخطة بالساعة</h1></div><div class="card center"><p>الخطة لسه متعملتش.</p><button class="btn primary" data-act="replan">${icon('wand-sparkles')} اعمليلي الخطة</button></div>` };
   const days = [];
   for (const b of plan.blocks) { const d = studyDay(b.s); if (!days.includes(d)) days.push(d); }
@@ -210,7 +214,11 @@ export function planView(ctx, params) {
   const examToday = SUBJECTS.find(s => studyDay(s.startTs) === sel);
   const remainingMin = plan.blocks.filter(b => b.type === 'study' && b.e > now && !st.done[b.task]).reduce((a, b) => a + (b.e - Math.max(b.s, now)) / MIN, 0);
   const miss = missed(plan, st.done, now);
-  const over = Object.entries(plan.overflow || {}).filter(([, v]) => v.length);
+  const over = Object.entries(plan.overflow || {}).map(([sid, ids]) => [sid, ids.filter(id => ctx.tm[id] && !st.done[id])]).filter(([, v]) => v.length);
+  const overT = over.flatMap(([, ids]) => ids.map(id => ctx.tm[id]));
+  const hasP1 = overT.some(t => t.priority === 1);
+  const overOpenNow = overOpen === null ? hasP1 : overOpen;
+  const overBanner = !overT.length ? '' : `<details class="banner over ${hasP1 ? 'warn' : 'info'}" ${overOpenNow ? 'open' : ''}><summary>${icon(hasP1 ? 'triangle-alert' : 'info')}<div><b>${hasP1 ? 'الوقت مش مكفي كل حاجة' : 'في حاجات مش داخلة الخطة'}</b><small>${hasP1 ? 'مواعيدك وأقصى مذاكرة في اليوم مش مكفيين المطلوب كله، فدول اتشالوا من الخطة ومنهم حاجات أساسية. لو تقدري زودي أقصى مذاكرة في اليوم من الإعدادات والخطة هتدخلهم، أو اعمليهم في أي وقت حر.' : 'مفيش وقت ليهم في مواعيدك الحالية. اعمليهم لو لقيتي وقت حر، أو زودي أقصى مذاكرة في اليوم من الإعدادات.'}</small></div></summary><div class="over-list">${overT.slice().sort((x, y) => x.priority - y.priority).map(t => `<div class="ov-row">${chip(t.sid)}<a href="${taskRoute(t)}">${esc(taskTitle(ctx, t))}</a><span class="pri p${t.priority}">${PRIORITY_LABEL[t.priority]}</span></div>`).join('')}</div></details>`;
 
   const tabs = days.map(d => {
     const ex = SUBJECTS.find(s => studyDay(s.startTs) === d);
@@ -224,7 +232,7 @@ export function planView(ctx, params) {
     <p class="muted">باقي ${dur(remainingMin)} مذاكرة فعلية لحد آخر امتحان. الخطة متظبطة على مواعيدك، ولو اتأخرتي بنرتبها من جديد من اللحظة دي.</p>
   </div>
   ${miss.length ? `<div class="banner warn">${icon('triangle-alert')}<div><b>فاتك ${count(miss.length, 'مهمة', 'مهمتين', 'مهام')}.</b><small>اضغطي نرتب اللي فاضل على الوقت اللي باقي، والأولوية للأساسي.</small></div><button class="btn small" data-act="replan">${icon('refresh-cw')} رتبي من جديد</button></div>` : ''}
-  ${over.length ? `<details class="banner info"><summary>${icon('info')}<div><b>في حاجات مش هتلحق في الوقت الحالي</b><small>دي حاجات "لو فيه وقت". اضغطي تشوفيها.</small></div></summary><div class="over-list">${over.map(([sid, ids]) => `<div>${chip(sid)} ${ids.map(id => ctx.tm[id] ? `<a href="${taskRoute(ctx.tm[id])}">${esc(taskTitle(ctx, ctx.tm[id]))}</a>` : '').join('، ')}</div>`).join('')}</div></details>` : ''}
+  ${overBanner}
   <div class="day-tabs" id="dayTabs">${tabs}</div>
   <div class="day-head">
     <h2>${dateLong(sel + 12 * HOUR)}</h2>
@@ -236,7 +244,13 @@ export function planView(ctx, params) {
     <div><b>${icon('settings')} مواعيدك مش كده؟</b><small>غيري ميعاد الصحيان والنوم والشغل من الإعدادات، والخطة هتتظبط عليهم.</small></div>
     <div class="row"><a class="btn soft" href="#/settings">${icon('settings')} الإعدادات</a><button class="btn primary" data-act="replan">${icon('refresh-cw')} رتبي من دلوقتي</button></div>
   </div>`;
-  return { html, mount: el => { const on = el.querySelector('.day-tab.on'); on && on.scrollIntoView({ inline: 'center', block: 'nearest' }); }, tick: 60000 };
+  return {
+    html, tick: 60000,
+    mount: el => {
+      const on = el.querySelector('.day-tab.on'); on && on.scrollIntoView({ inline: 'center', block: 'nearest' });
+      const d = el.querySelector('details.over'); d && d.addEventListener('toggle', () => { overOpen = d.open; });
+    }
+  };
 }
 
 // ---------- SETTINGS ----------
@@ -265,7 +279,7 @@ export function settingsView(ctx) {
     </div>
     <label class="field"><span>أقصى مذاكرة في اليوم</span>
       <select data-set="dailyCap">${[5, 6, 7, 8, 9, 10].map(h => `<option value="${h}" ${+st.dailyCap === h ? 'selected' : ''}>${h} ساعات</option>`).join('')}</select>
-      <small>أيام الامتحانات نفسها بتكون أقل (6 ساعات بعد الامتحان بالكتير).</small></label>
+      <small>من غير مراجعة ليلة الامتحان ومراجعة الصبح، دول محسوبين لوحدهم. أيام الامتحانات نفسها بتكون أقل: 6 ساعات بعد الامتحان بالكتير.</small></label>
   </section>
   <section class="card form">
     <h3>${icon('briefcase')} الشغل</h3>
@@ -293,15 +307,8 @@ export function settingsView(ctx) {
     <h3>${icon('rotate-ccw')} البداية من الأول</h3>
     <div class="row"><button class="btn soft" data-act="replan">${icon('refresh-cw')} رتبي الخطة من دلوقتي</button><button class="btn danger" data-act="reset">${icon('triangle-alert')} امسحي كل التقدم</button></div>
   </section>`;
-  return {
-    html, mount: el => {
-      el.addEventListener('change', e => {
-        const t = e.target;
-        if (t.dataset.set) { setSetting(t.dataset.set, t.dataset.set === 'dailyCap' ? +t.value : t.value); ctx.replan('اتظبطت الخطة على المواعيد الجديدة'); }
-        if (t.dataset.work) { const w = settings().work; w[t.dataset.work] = t.type === 'checkbox' ? t.checked : t.value; save(); ctx.replan('اتظبطت الخطة على مواعيد الشغل'); ctx.render(); }
-      });
-    }
-  };
+  // inputs are handled by one delegated listener in app.js
+  return { html };
 }
 
 // ---------- GUIDE ----------
@@ -380,7 +387,13 @@ export function importView(ctx, params) {
   const code = params.code || '';
   let preview = '';
   if (code) {
-    try { const p = decodeCode(code); preview = `<p>اللينك فيه <b>${(p.d || []).length}</b> مهمة خلصانة و<b>${Object.keys(p.q || {}).length}</b> سؤال متقيم.</p><button class="btn primary" data-act="import" data-code="${esc(code)}">${icon('download')} ضيفيهم للتقدم هنا</button>`; }
+    try {
+      const p = decodeCode(code);
+      const nd = (p.d || []).length, nq = Object.keys(p.q || {}).length;
+      const tasksTxt = nd ? count(nd, 'مهمة خلصانة', 'مهمتين خلصانين', 'مهام خلصانة') : 'مفيش مهام خلصانة';
+      const qTxt = nq ? count(nq, 'سؤال متقيم', 'سؤالين متقيمين', 'أسئلة متقيمة') : 'مفيش أسئلة متقيمة';
+      preview = `<p>اللينك فيه: <b>${tasksTxt}</b>، و<b>${qTxt}</b>.</p><button class="btn primary" data-act="import" data-code="${esc(code)}">${icon('download')} ضيفيهم للتقدم هنا</button>`;
+    }
     catch (e) { preview = '<p class="bad">اللينك ده مش سليم.</p>'; }
   }
   const html = `<div class="page-head"><h1>${icon('download')} استيراد تقدم</h1></div>

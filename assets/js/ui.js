@@ -54,8 +54,8 @@ export function modal(htmlStr, { onClose } = {}) {
   return { el: wrap, close };
 }
 
-export function emptyState(title, sub, ic = 'hourglass') {
-  return `<div class="empty">${icon(ic)}<h3>${esc(title)}</h3>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`;
+export function emptyState(title, sub, ic = 'hourglass', back = null) {
+  return `<div class="empty">${icon(ic)}<h3>${esc(title)}</h3>${sub ? `<p>${esc(sub)}</p>` : ''}${back ? `<a class="btn soft" href="${back[0]}">${icon('arrow-right')} ${esc(back[1])}</a>` : ''}</div>`;
 }
 
 // simple count-down timer component bound to an element
